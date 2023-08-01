@@ -461,8 +461,25 @@ func (s) TestHealthCheckWithAddrConnDrain(t *testing.T) {
 	default:
 	}
 	// trigger teardown of the ac
-	r.UpdateState(resolver.State{Addresses: []resolver.Address{{Addr: "fake address"}}, ServiceConfig: sc})
+	//r.UpdateState(resolver.State{Addresses: []resolver.Address{{Addr: "fake address"}}, ServiceConfig: sc})
 
+	// trigger server unhealthy status
+	ts.SetServingStatus("foo", healthpb.HealthCheckResponse_NOT_SERVING)
+
+	// The existing RPC should be still good to proceed.
+
+	for i := 0; i < 1000; i++ {
+		if err := stream.Send(req); err != nil {
+			t.Fatalf("%v.Send(_) = %v, want <nil>", stream, err)
+		}
+		if _, err := stream.Recv(); err != nil {
+			t.Fatalf("%v.Recv() = _, %v, want _, <nil>", stream, err)
+		}
+	}
+
+	time.Sleep(2 * time.Second)
+	// simulate etcd member removal and etcd client auto sync refresh the addresses.
+	r.UpdateState(resolver.State{Addresses: []resolver.Address{{Addr: "fake address"}}, ServiceConfig: sc})
 	select {
 	case <-hcExitChan:
 	case <-time.After(5 * time.Second):
@@ -472,14 +489,6 @@ func (s) TestHealthCheckWithAddrConnDrain(t *testing.T) {
 			t.Fatal("Health check function has not entered after 5s.")
 		}
 		t.Fatal("Health check function has not exited after 5s.")
-	}
-
-	// The existing RPC should be still good to proceed.
-	if err := stream.Send(req); err != nil {
-		t.Fatalf("%v.Send(_) = %v, want <nil>", stream, err)
-	}
-	if _, err := stream.Recv(); err != nil {
-		t.Fatalf("%v.Recv() = _, %v, want _, <nil>", stream, err)
 	}
 }
 
